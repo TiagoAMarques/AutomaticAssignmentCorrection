@@ -1,0 +1,247 @@
+---
+title: "2nd Assignment EN 2025: Moving vultures"
+subtitle: "Proposed Solution"
+author: "Tiago A. Marques"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+toc: true
+number-sections: true
+colorlinks: true
+format:
+  html: 
+    code-fold: false
+    html-math-method: katex
+  pdf: 
+    geometry: 
+      - top=30mm
+      - left=20mm
+  docx: default
+editor: visual
+csl: C:\\Users\\tiago\\Dropbox\\ctr\\mee.csl
+bibliography: C:\\Users\\tiago\\Dropbox\\ctr\\MainBibFile.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,cache=FALSE)
+options(scipen=999)
+```
+
+```{r,echo=FALSE,eval=FALSE}
+#if one wants html format
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    css: styles.css
+```
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE,cache=FALSE}
+library(readxl)
+library(purrr)
+library(DT)
+```
+
+Use this `.qmd` document (`.qmd` files are quarto documents, for you these work just the same as .rmd files) to see a solution and how your answers differed from my solution.
+
+Select the `.txt` file with your results. You must replace in the assignment of object `s2cf` the name of the `.txt` you handed in instead of `file.txt`. Said file must be in the same folder as this ".qmd" file
+
+Also, substitute below the 11111 assigned to `naluno` with your student number
+
+```{r}
+#student to check .txt file
+s2cf <- "file.txt"
+# student to check number
+# number of characters in the file name
+ncs <- nchar(s2cf)
+naluno <- 11111
+```
+
+A few constants are defined.
+
+```{r}
+## number of questions in assignment
+nq <- 9
+```
+
+```{r}
+# Weights by question
+# 1 more weight than questions
+# the first weight is 1, just
+# to bring in the student number
+# weights must add to 1 (except the first)
+# defaults to all weights being equal
+weights=c(1,rep(1/nq,nq))
+```
+
+Reading required data
+
+```{r}
+grifos <- read.csv("training_dataset.csv")
+```
+
+The function `getmyres` computes the correct results given a seed, the number of questions, and a dataset (`grifos`, by default). This function is more complicated than what your code might be, this is attempting to be general.
+
+```{r}
+getmyres<-function(aluno,nq,mydata = grifos){
+# this function takes in as arguments
+# aluno: the student number
+# nq: the number of questions in the assignment - here nq = 9
+# here I compute the correct results
+# ----
+#first, generate the same data a student would get
+set.seed(aluno)
+n <- round(runif(1,1000,2000))
+# your rows of data
+yr <- sample(1:nrow(mydata),size = n,replace=FALSE)
+# your data
+yd <- mydata[yr,]
+# a sample for one of the exercises
+n2 <- round(runif(1,10,20))
+# your significance values
+sig1 <- sample(c(0.1,0.05,0.01,0.001,0.07,0.32),size = 1)
+sig2 <- sample(c(0.1,0.05,0.01,0.001,0.07,0.32),size = 1)
+# values of the rows for the last exercise
+i1 <- round(runif(1,300,500))
+i2 <- round(runif(1,501,800))
+i3 <- round(runif(1,801,1000))
+# ----
+#second, get the correct answers given the student number
+# all columns with accelerations
+cxyz <- 5:304
+#columns of x
+cx <- 5:104
+#columns of y
+cy <- 105:204
+#columns of z
+cz <- 205:304
+# number of records
+result1 <- nrow(yd)
+# for the first record get
+# get the x's accelerations
+xs1 <- as.numeric(yd[1,cx])
+# get the y's accelerations
+ys1 <- as.numeric(yd[1,cy])
+# get the z's accelerations
+zs1 <- as.numeric(yd[1,cz])
+# get the correlation between x's and y's accelerations
+result2 <- round(cor(xs1,ys1),2)
+# get the correlation between x's and z's accelerations
+result3 <- round(cor(xs1,zs1),2)
+# get the correlation between y's and z's accelerations
+result4 <- round(cor(ys1,zs1),2)
+# get which one is the maximum
+# absolute correlations between pairs of accelerations
+absacxyz<- abs(c(result2,result3,result4))
+maxis<- which(absacxyz==rep(max(absacxyz),3))
+# return the pair with the maximum absolute correlation
+result5 <- c("X e Y","X e Z","Y e Z")[maxis]
+# check if it is a positive or a negative correlation
+result6 <- ifelse(c(result2,result3,result4)[maxis]>0,"positive","negative")
+# get the value of the t.test
+# comparing the xs and the ys for the first n2 rows
+# and note it is a paired test
+# the unlist function is not strictly necessary but might avoid issues
+mytest <- t.test(unlist(yd[1:n2,cx]),unlist(yd[1:n2,cy]),paired = TRUE)
+# get the value of the test statistic 
+result7 <- round(as.numeric(mytest$statistic),2)
+# make your decision at the "sig1" level of significance
+decision <- ifelse(mytest$p.value<sig1,"reject H0","do not reject H0")
+# store decision
+result8 <- decision
+# format data to compare the absolute accelerations across 3 rows of data
+# those are rows i1, i2 and i3
+myrows <- c(paste0("L",i1),paste0("L",i2),paste0("L",i3))
+# there will be 300 records for each row
+# and we want the absolute accelerations
+# so need to use the fucntion "abs"
+dataL1 <- as.numeric(yd[i1,cxyz])
+dataL2 <- as.numeric(yd[i2,cxyz])
+dataL3 <- as.numeric(yd[i3,cxyz])
+accels.i1i2i3 <- data.frame(
+  row=as.factor(rep(myrows,each=300)),
+  accel= c(dataL1,dataL2,dataL3))
+# #note the code above is complicated but one could do this in a simpler way.
+# di1 <- as.numeric(yd[i1,cxyz])
+# di2 <- as.numeric(yd[i2,cxyz])
+# di3 <- as.numeric(yd[i3,cxyz])
+# grupo <- rep(c("L1","L2","L3"),each=300)
+# accels.1 <- data.frame(row=
+#     grupo,
+#     accel= c(di1,di2,di3))
+# do the Kruskall Wallis test, take the corresponding p-value
+kwtestp <- kruskal.test(formula=accel~row,data=accels.i1i2i3)$p.value
+# record your decision
+decision <- ifelse(kwtestp<sig2,"reject H0","do not reject H0")
+result9 <- decision
+#store answers in the correct format
+  myanswers <- list(aluno)
+  for(i in 1:nq){
+    myanswers[[i+1]]<-
+      eval(parse(text=paste0("result",i)))
+  }
+  return(myanswers)
+}
+```
+
+Your results before manual tweaking
+
+```{r}
+# get student results
+studentres <- dget(file=s2cf)
+studentres
+```
+
+and after manual tweaking (in case you did not use a numeric but you got the right test I consider the answer to be correct)
+
+```{r}
+# if they put all the blurb from the correct test I consider it incorrect
+# the guidelines are clear
+# this must be a numerical value
+if(class(studentres[[8]])=="htest") studentres[[8]]<-0
+# if they gave me the correct test statistic,
+# even if not numeric, I consider it correct
+studentres[[8]] <- as.numeric(studentres [[8]])
+studentres
+```
+
+Correct results
+
+```{r}
+# get true results for student i
+# this is the hard stuff, needs to be tweaked each time
+# by creating a bespoke code inside function "getmyres"
+trueres <- getmyres(aluno=studentres[[1]],nq=nq)
+trueres
+```
+
+Check which results are correct
+
+```{r}
+correctres<- purrr::map2_lgl(studentres, trueres, ~ isTRUE(all.equal(.x, .y, tolerance = 1e-7)))[-1]
+correctres
+```
+
+Your grade is `r round(sum(correctres)/length(correctres),3)`.
+
+The incorrect results correspond to question(s)
+
+```{r}
+which(!correctres)
+```
+
+the results that are different are shown below, your results
+
+```{r}
+studentres[c(FALSE,!correctres)]
+```
+
+then what they should be
+
+```{r}
+trueres[c(FALSE,!correctres)]
+```
+
+For easier comparison, the top row is your result, and the bottom row the correct result, for the questions you got incorrectly
+
+```{r}
+rbind(studentres[c(FALSE,!correctres)],trueres[c(FALSE,!correctres)])
+```

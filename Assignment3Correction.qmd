@@ -1,0 +1,462 @@
+---
+title: "Automatic Assignment Correction"
+subtitle: "3rd Assignment EN 2025"
+author: "Tiago A. Marques e Sara Marques"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+toc: true
+number-sections: true
+colorlinks: true
+format:
+  html: 
+    code-fold: false
+    html-math-method: katex
+  pdf: 
+    geometry: 
+      - top=30mm
+      - left=20mm
+  docx: default
+editor: visual
+csl: C:\\Users\\tiago\\Dropbox\\ctr\\mee.csl
+bibliography: C:\\Users\\tiago\\Dropbox\\ctr\\MainBibFile.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,cache=FALSE)
+```
+
+```{r,echo=FALSE,eval=FALSE}
+#if one wants html format
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    css: styles.css
+```
+
+```{r,warning=FALSE,message=FALSE,echo=FALSE,cache=FALSE}
+library(lubridate)
+library(mgcv)
+library(readxl)
+library(purrr)
+library(knitr)
+library(DT)
+```
+
+# Introduction
+
+In this document I present the correction template for automatic correction of assignments.
+
+The rationale of this autocorrection is that students are given a `.Rmd` that includes their assignment. The fundamental aspects of this document are:
+
+1.  at the top there is a call to `set.seed` and the students replace a place holder by their student number. Something like
+
+```{r}
+# replace 11111 with your student number
+set.seed(11111)
+```
+
+2.  data are generated such that each student gets their own data, say, `mydata`, as
+
+```{r}
+n <- round(runif(1,100,200))
+mydata <- rnorm(n)
+```
+
+3.  Questions are asked and students answer them by replacing lines of code like the one below
+
+```{r}
+# what is your sample size
+myn<-NA
+# what is the mean of your data
+mymean<-NA
+```
+
+with their results
+
+```{r}
+# what is your sample size
+myn<-n
+# what is the mean of your data
+mymean<-mean(mydata)
+```
+
+4.  At the end of their report a text file is created, with their results and their student number
+
+5.  Students submit their assignments, the .Rmd, the .html (or .pf or .docx) and the .txt
+
+Then, all the assignments are placed in a folder and the correction code is run. The correction code itself loops over students and:
+
+1.  reads the students' results
+2.  recreates all the steps required to produce the correct answers given the student seed
+3.  checks students results against the correct answers
+4.  merges the results with a list of all students in the course
+5.  exports the results in a format that moodle can read so that grades can be released to students
+
+I would like to automatize this as much as possible, maybe even do an R package out of it, to allow others to do the same for their classes/assessments. The problem is that the methods is cumbersome in the sense that one always needs to manually tweak two files:
+
+1.  The .Rmd template, as data will have to be created differently for each new assignment
+2.  The auto-correction file (essentially, a file like this one, minus this introduction!), which includes the data creation and the code that creates the correct answers (via function `getmyres`)
+
+While the data creation could be done via a function that creates data given a single input parameter, i.e. the student number, which could then be called by both the .Rmd template and this file to create the data, obtaining the correct answers will always be fiddly and dependent of the case in hand.
+
+It could however maybe just mean one would have to create a function that again given 1 argument, again the student number, would return the correct results.
+
+Below is an example of the autocorrection code. The file that would be given to the students would be `AssignmentTemplate.Rmd`.
+
+# A few definitions
+
+First, a few constants are defined.
+
+```{r}
+## number of questions in assignment
+nq <- NA
+nq <- 15
+```
+
+```{r}
+## assignment number
+assignment <- NA
+assignment <- 3
+```
+
+```{r}
+# Weights by question
+# 1 more weight than questions
+# the first weight is 1, just
+# to bring in the student number
+# weights must add to 1 (except the first)
+# defaults to all weights being equal
+weights=c(1,rep(1/nq,nq))
+```
+
+```{r}
+# location of files submitted by students
+# these are downloaded from moodle
+# and then stored here
+pathfiles <- "HandedIn"
+```
+
+# Reading required data
+
+If the exercise uses external data, read it in here
+
+```{r}
+shagsALL <- read.csv("Foraging_trip.csv", sep=";")
+```
+
+# Required functions
+
+The function `getmyres` computes the correct results given a seed and the number of questions. This is the only function that needs to be tweaked for each assignment, with the code that produces the correct object to check against the student's results
+
+```{r}
+getmyres<-function(aluno,nq){
+# here I compute the correct results
+set.seed(aluno)
+n <- round(runif(1,1000,nrow(shagsALL)))
+shagsR <- shagsALL[sample(1:nrow(shagsALL),size = n,replace=FALSE),]
+# do not touch this code chunk
+n <- round(runif(1,900,nrow(shagsALL)))
+yr <- sample(1:nrow(shagsALL),size = n,replace=FALSE)
+# some other data
+shagsy <- shagsALL[yr,]
+# a sample for one of the exercises
+n2 <- round(runif(1,20,30))
+# your significance values
+sig1 <- sample(c(0.1,0.05,0.01,0.2,0.0001,0.001,0.07,0.32),size = 1)
+sig2 <- sample(c(0.1,0.05,0.01,0.2,0.0001,0.001,0.07,0.32),size = 1)
+#
+result1 <- nrow(shagsR)
+#
+result2 <- round(1-nrow(shagsR)/nrow(shagsALL),2)
+# count per tag type
+tabtype <- table(shagsR$tag)
+tabtypecount <- as.numeric(table(shagsR$tag))
+#
+result3 <- names(tabtype)[which(max(tabtypecount)==as.numeric(tabtypecount))]
+#
+mychisq <- with(shagsR,chisq.test(table(tag,year)))
+mchisqX <- mychisq$statistic
+#
+result4 <- round(as.numeric(mchisqX),2)
+#
+decision <- ifelse(mychisq$p.value<sig1,"reject H0","not reject H0")
+#
+result5 <- decision
+#
+result6 <- as.numeric(round(with(shagsR,cor.test(maxdist,length))$estimate,2))
+pval <- with(shagsR,cor.test(maxdist,length))$p.value
+decision <- ifelse(pval<sig2,"reject H0","not reject H0")
+#
+result7 <- as.character(decision)
+model.length <- glm(length~sex+year+tag,family=Gamma(link="log"),data=shagsR)
+summary(model.length)
+coeffs <- summary(model.length)$coeff[,4]
+coeffnames <- dimnames(summary(model.length)$coeff)[[1]]
+decisionsex <- ifelse(coeffs[which(coeffnames=="sexMale")]<sig1,"reject H0","not reject H0")
+decisionyear <- ifelse(coeffs[which(coeffnames=="year")]<sig1,"reject H0","not reject H0")
+#
+result8 <- as.character(decisionsex)
+#
+result9 <- as.character(decisionyear)
+pred <- predict(model.length,newdata=data.frame(sex="Female",year=2021,tag="pathT"),type="response")
+#
+result10 <- round(as.numeric(pred),2)
+#
+result11 <- "factor"
+taylor <- read.csv("MMSL2R_FINAL_202505.csv")
+set.seed(aluno)
+corrupted <- sample(1:nrow(taylor),size = 100,replace=FALSE)
+taylorR <- taylor[-corrupted,]
+sps <- c("Dolphin","Minke","Humpback")
+mysp <- sample(sps,1)
+# a couple of random days of the year
+julian_days <- sample(1:365,2,replace = FALSE)  # example Julian day
+date1 <- as.Date(julian_days[1], origin = "2025-01-01")
+mymon1 <- month(date1)
+monname1 <- month.name[mymon1]
+myday1 <- day(date1)
+date2 <- as.Date(julian_days[2], origin = "2025-01-01")
+mymon2 <- month(date2)
+monname2 <- month.name[mymon2]
+myday2 <- day(date2)
+dolphin1s <- with(taylorR,sum(Dolphin==1,na.rm=TRUE))
+minke1s <- with(taylorR,sum(Minke==1,na.rm=TRUE))
+humpbacks1s <- with(taylorR,sum(Humpback==1,na.rm=TRUE))
+spcounts <- c(dolphin1s,minke1s,humpbacks1s)
+maxsp <- sps[which(max(spcounts)==spcounts)]
+#
+result12 <- maxsp
+myform <- as.formula(paste0(mysp,"~s(DOY,k=6)"))
+mymod <- gam(myform,family=binomial,data=taylorR)
+#
+pred1 <- predict(mymod,newdata=data.frame(DOY=julian_days),type="response")
+#
+pred1 <- as.numeric(pred1)
+result13 <- round(pred1[1],2) 
+result14 <- round(pred1[2],2)
+# replace the NA with the correct julian day
+which.maxp <- ifelse(result13>result14,julian_days[1],julian_days[2])
+#
+result15 <- which.maxp
+#store answers in the correct format
+  myanswers <- list(aluno)
+  for(i in 1:nq){
+    myanswers[[i+1]]<-
+      eval(parse(text=paste0("result",i)))
+  }
+  return(myanswers)
+}
+```
+
+# Get students information
+
+This presupposes that there is a file that contains as a bare minimum the names and student numbers for all students that might have handed in the assignment
+
+```{r}
+# Input file name
+fenix.file.name="students_66517_ecologia-numerica_S1_2025-2026.2025-09-04_08-49-10_234.xlsx"
+```
+
+```{r}
+#read data from FENIX-file
+EN2025f <- read_excel(paste0("../../alunos/",fenix.file.name))
+```
+
+```{r}
+#select just name and student number
+EN2025f <- EN2025f[,c("Número","Nome")]
+# Get students assignments names ---- 
+
+#get all files submitted by students
+# get .txt only
+allfiles <- list.files(path = pathfiles)
+nall <- length(allfiles)
+# this should be the number of students
+# since each student submits (should submit!!) 3 files
+# nall/3
+
+# get .txt files only
+# These are the files after I manually removed error files 
+# into an "ERRORs" folder
+# Need to automate the process
+txtfiles <- list.files(path = pathfiles,pattern=".txt")
+# remove my test file: student number 11111
+txtfiles <- txtfiles[txtfiles!="Res11111.txt"]
+# number of students with a valid submission
+nfiles <- length(txtfiles)
+```
+
+We have a total of `r nfiles` students handing in a `.txt`.
+
+# Get students' results and compare to correct results
+
+```{r}
+# Get student results and compare to true results ---- 
+
+#object to hold whether results are correct - by question
+correctres <- matrix(NA,nrow=nfiles,ncol=1+nq)
+#objects to hold the grades - by question
+grades <- matrix(NA,nrow=nfiles,ncol=1+nq)
+
+#for each student that handed in a .txt
+for (i in 1:nfiles){
+  # get student results
+  studentres <- dget(file=paste0(pathfiles,"/",txtfiles[i]))
+  # record student number
+  correctres[i,1] <- studentres[[1]]
+  # some tweaking required as some students reported the value of a factor
+  # for result3 while my correction is a character
+if (!is.null(studentres[[4]])) {
+studentres[[4]] <- ifelse(is.factor(studentres[[4]]),as.character(studentres[[4]]),studentres[[4]])
+}
+  # get true results for student i
+  # this is the hard stuff, needs to be tweaked each time
+  # by creating a bespoke code inside function "getmyres"
+  trueres <- getmyres(aluno=studentres[[1]],nq=nq)
+  # check correct answers
+  # the first element of the comparison corresponds 
+  # to the student number, so it is ignored here
+  correctres[i,2:(1+nq)] <- purrr::map2_lgl(studentres, trueres, ~ isTRUE(all.equal(.x, .y, tolerance = 1e-7)))[-1]
+  # the grade by question, using the weights
+  grades[i,] <- weights*correctres[i,]
+}
+
+
+#Given the fact that some students complained about their grades, as they had errors induced by an inconsistency - between the .html and the grading - in the origin used for obtaining Julian days from dates, I manually set the corresponding grades of these students to correct instead of incorrect.
+# see file 00_README_manualtweakinggrades.txt for details
+
+#Armando Frazão - gets result15 correct
+iaf <- which(grades[,1]==61519)
+grades[iaf,16] <- 1/nq
+
+#Constança Madrugo - gets result14 and result15 correct
+icm <- which(grades[,1]==61664)
+grades[icm,15] <- 1/nq
+grades[icm,16] <- 1/nq
+
+# Emilia Potselueva - gets result4, result13, result14a and result15 correct
+# the wrongs were given non-numeric results being used
+iep <- which(grades[,1]==59527)
+grades[icm,5] <- 1/nq
+grades[icm,14] <- 1/nq
+grades[icm,15] <- 1/nq
+grades[icm,16] <- 1/nq
+
+# Valentim Gomes
+ivg <- which(grades[,1]==61619)
+grades[ivg,16] <- 1/nq
+
+#  add the total grade as the last column
+grade <- data.frame(aluno=grades[,1],nota=apply(grades[,-1],1,sum,na.rm=TRUE))
+```
+
+# The grades
+
+We can take a look at the grades per question
+
+```{r}
+datatable(round(grades,3),filter = "top", options = list(pageLength = 10, autoWidth = TRUE))
+```
+
+and just the total grades
+
+```{r}
+datatable(round(grade,3),filter = "top", options = list(pageLength = 10, autoWidth = TRUE))
+```
+
+The minimum grades was `r round(min(grade$nota),2)` and the maximum grade was `r round(max(grade$nota),2)`, with the corresponding average grade being `r round(mean(grade$nota),2)`. The distribution of grades is represented below. This actually looks quite nice, since most students get good grades, but we also have a few bad grades.
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(grade$nota,ylab="Nota",main="")
+hist(grade$nota,xlab="Nota",ylab="Frequência",main="")
+```
+
+# Outputing results for moodle
+
+```{r}
+# merge results to a grading table
+# this must be the file that is then uploaded into moodle
+EN2025f <- merge(x=EN2025f,y=grade,by.x = "Número",by.y="aluno",all.x = TRUE)
+# get only valid grades, in the odd unpredictable case there are NA's
+# this should have no practical effect: there should be no NAs at this stage
+validgrades <- EN2025f[!is.na(EN2025f$nota),]
+
+#check all looks good
+# sort by name, easier for reading below
+kable(validgrades[order(validgrades$Nome),])
+
+#export to upload into moodle
+write.table(validgrades,file=paste0("Grades4moodleT",assignment,".csv"),quote=FALSE,row.names = FALSE,fileEncoding="latin1",sep=",")
+```
+
+# Checking a given student's results
+
+Select `.txt` file from student to check
+
+```{r}
+#student to check file
+naluno <- 61618
+#student to check file
+s2cf <- "Ana Gonçalves_834095_assignsubmission_file_ResT3_N61618.txt"
+```
+
+## Student's results
+
+The student's results before manual tweaking
+
+```{r}
+# get student results
+studentres <- dget(file=paste0(pathfiles,"/",s2cf))
+studentres
+```
+
+and after manual tweaking
+
+```{r}
+  # some tweaking required as some students reported the value of a factor
+  # for result3 while my correction is a character
+if (!is.null(studentres[[4]])) {
+studentres[[4]] <- ifelse(is.factor(studentres[[4]]),as.character(studentres[[4]]),studentres[[4]])
+}
+studentres
+```
+
+## Correct results
+
+```{r}
+# get true results for student i
+# this is the hard stuff, needs to be tweaked each time
+# by creating a bespoke code inside function "getmyres"
+trueres <- getmyres(aluno=studentres[[1]],nq=nq)
+trueres
+```
+
+## Check results
+
+The correct results are
+
+```{r}
+correctres<- purrr::map2_lgl(studentres, trueres, ~ isTRUE(all.equal(.x, .y, tolerance = 1e-7)))[-1]
+paste("result",1:nq)[correctres]
+```
+
+and the incorrect results are
+
+```{r}
+paste0("result",1:nq)[!correctres]
+```
+
+the results that are different are shown below, first the student's
+
+```{r}
+studentres[c(FALSE,!correctres)]
+```
+
+and then the correct values
+
+```{r}
+trueres[c(FALSE,!correctres)]
+```
+
+# References
